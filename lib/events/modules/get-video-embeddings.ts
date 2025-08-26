@@ -62,5 +62,5 @@ export const getMostSimilarVideoToNotes = async (videos: VideoResult[]) => {
      }
    }
   
-   return mostSimilarVideo;
+   return {mostSimilarVideo, similarityMap};
 }

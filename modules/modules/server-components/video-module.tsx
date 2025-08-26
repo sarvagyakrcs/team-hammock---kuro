@@ -52,35 +52,53 @@ const VideoLoader = ({ module }: { module: Module }) => (
   </div>
 )
 
-// Component to find and set the video
+// Component to find and show top 3 most similar videos
 const VideoFinder = async ({ module }: Props) => {
-  console.log("Finding video")
+  console.log("Finding top 3 most similar videos")
   try {
-    const videos = await getVideos(module.name, 5)
+    const allVideos = await getVideos(module.name, 3)
     
-    let videoUrl = ''
-    try {
-      // Try to get the most similar video based on transcript
-      const mostSimilarVideo = await getMostSimilarVideoToNotes(videos)
-      videoUrl = mostSimilarVideo.link
-    } catch (error) {
-      // If transcript comparison fails, use the first video
-      console.log("Error finding similar video, using first video instead:", error)
-      videoUrl = videos[0]?.link || ''
-    }
-    
-    if (!videoUrl && videos.length > 0) {
-      videoUrl = videos[0].link
+    if (allVideos.length === 0) {
+      throw new Error("No videos found")
     }
 
-    // If we have a video URL, update the module using the server action
-    if (videoUrl) {
-      // Update the module in the database but don't revalidate during render
-      const result = await updateModuleVideo(module.id, videoUrl)
+    try {
+      // Get similarity scores for all videos
+      const result = await getMostSimilarVideoToNotes(allVideos)
+      
+      if ('mostSimilarVideo' in result && result.similarityMap) {
+        // Sort videos by similarity score (highest first)
+        const sortedVideos = allVideos
+          .map(video => ({
+            video,
+            similarity: result.similarityMap?.get(video.link)?.similarity || 0
+          }))
+          .sort((a, b) => b.similarity - a.similarity)
+          .map(item => item.video)
+
+        console.log('Top 3 videos sorted by similarity')
+        
+        return <VideoModuleClient 
+          module={module} 
+          videos={sortedVideos}
+          topSimilarVideo={result.mostSimilarVideo}
+        />
+      } else {
+        // Fallback: just use the videos as-is
+        return <VideoModuleClient 
+          module={module} 
+          videos={allVideos}
+          topSimilarVideo={allVideos[0]}
+        />
+      }
+    } catch (error) {
+      console.log("Error finding similar videos, using original order:", error)
+      return <VideoModuleClient 
+        module={module} 
+        videos={allVideos}
+        topSimilarVideo={allVideos[0]}
+      />
     }
-    
-    // Return the module with the updated video URL
-    return <VideoModuleClient module={{...module, videoUrl}} />
   } catch (error) {
     console.error("Error in VideoFinder:", error)
     return (
