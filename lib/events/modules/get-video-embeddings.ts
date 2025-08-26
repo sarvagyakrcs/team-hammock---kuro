@@ -36,7 +36,9 @@ export const getMostSimilarVideoToNotes = async (videos: VideoResult[]) => {
        
        // Store the highest similarity score for this video
        if (result.length > 0) {
-         similarityMap.set(video.link, { video, similarity: result[0].CosineSimilarity });
+        for (const r of result) {
+          similarityMap.set(video.link, { video, similarity: r.CosineSimilarity });
+        }
        }
      } catch (error) {
        console.error(`Error processing video ${video.title}:`, error);

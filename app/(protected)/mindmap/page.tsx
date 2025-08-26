@@ -17,10 +17,14 @@ import {
   Position,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { mindMapData } from './data'
-import { Heading, Subheading } from '@/components/ui/heading'
+import { Heading } from '@/components/ui/heading'
 import { Text } from '@/components/ui/text'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import FileUploader from '@/components/global/file-uploader'
+import StudyChatbot from '@/components/global/study-chatbot'
+import { studyBuddyAPI, type MindMapNode } from '@/lib/study-buddy-api'
 import clsx from 'clsx'
 
 // Custom Node Component
@@ -110,18 +114,122 @@ const nodeTypes: NodeTypes = {
 
 const MindMap = () => {
   const [isMounted, setIsMounted] = useState(false)
+  const [currentMindMapData, setCurrentMindMapData] = useState<MindMapNode[]>([])
+  const [isGenerating, setIsGenerating] = useState(false)
+  const [topicInput, setTopicInput] = useState('')
+  const [showUploader, setShowUploader] = useState(false)
+  const [showChatbot, setShowChatbot] = useState(false)
+  const [hasGeneratedMap, setHasGeneratedMap] = useState(false)
+  const [currentDocumentName, setCurrentDocumentName] = useState<string>('')
 
   useEffect(() => {
     setIsMounted(true)
   }, [])
 
-  // Transform mindMapData to React Flow format
+  // Generate mind map from topic
+  const generateMindMapFromTopic = async () => {
+    if (!topicInput.trim() || isGenerating) return
+
+    setIsGenerating(true)
+    setCurrentDocumentName('')
+    try {
+      const newMindMapData = await studyBuddyAPI.generateTopicMindMap(topicInput.trim())
+      setCurrentMindMapData(newMindMapData)
+      setHasGeneratedMap(true)
+    } catch (error) {
+      console.error('Failed to generate mind map:', error)
+      // Create a simple fallback if API fails
+      const fallbackData: MindMapNode[] = [
+        {
+          id: '1',
+          label: topicInput.trim(),
+          children: [],
+          explanation: `Topic: ${topicInput.trim()}. Mind map generation failed, but you can still chat about this topic.`,
+          metadata: { color: '#3b82f6', icon: '🧠' }
+        }
+      ]
+      setCurrentMindMapData(fallbackData)
+      setHasGeneratedMap(true)
+    } finally {
+      setIsGenerating(false)
+    }
+  }
+
+  // Generate mind map from uploaded document
+  const generateMindMapFromDocument = async (filename: string) => {
+    setIsGenerating(true)
+    setShowUploader(false)
+    setShowChatbot(true) // Auto-enable chatbot for documents
+    
+    try {
+      const newMindMapData = await studyBuddyAPI.generateMindMapFromDocument(filename)
+      setCurrentMindMapData(newMindMapData)
+      setHasGeneratedMap(true)
+      setCurrentDocumentName(filename)
+      setTopicInput(filename.replace(/\.[^/.]+$/, "").replace(/[-_]/g, ' '))
+    } catch (error) {
+      console.error('Failed to generate mind map from document:', error)
+      // Create a fallback based on document name
+      const topicFromFilename = filename.replace(/\.[^/.]+$/, "").replace(/[-_]/g, ' ')
+      const fallbackData: MindMapNode[] = [
+        {
+          id: '1',
+          label: topicFromFilename,
+          children: [],
+          explanation: `Document: ${filename}. Mind map generation failed, but you can still chat about this document.`,
+          metadata: { color: '#3b82f6', icon: '📄' }
+        }
+      ]
+      setCurrentMindMapData(fallbackData)
+      setHasGeneratedMap(true)
+      setCurrentDocumentName(filename)
+      setTopicInput(topicFromFilename)
+    } finally {
+      setIsGenerating(false)
+    }
+  }
+
+  // Generate mind map from all uploaded notes
+  const generateMindMapFromAllNotes = async () => {
+    if (isGenerating) return
+
+    setIsGenerating(true)
+    setCurrentDocumentName('')
+    setShowUploader(false)
+    setShowChatbot(true) // Auto-enable chatbot
+    
+    try {
+      const newMindMapData = await studyBuddyAPI.generateMindMapFromAllNotes()
+      setCurrentMindMapData(newMindMapData)
+      setHasGeneratedMap(true)
+      setTopicInput('All Study Materials')
+    } catch (error) {
+      console.error('Failed to generate mind map from all notes:', error)
+      // Create a fallback for all notes
+      const fallbackData: MindMapNode[] = [
+        {
+          id: '1',
+          label: 'Your Study Materials',
+          children: [],
+          explanation: 'Overview of all your uploaded study materials. Mind map generation failed, but you can still chat about your documents.',
+          metadata: { color: '#3b82f6', icon: '📚' }
+        }
+      ]
+      setCurrentMindMapData(fallbackData)
+      setHasGeneratedMap(true)
+      setTopicInput('All Study Materials')
+    } finally {
+      setIsGenerating(false)
+    }
+  }
+
+  // Transform currentMindMapData to React Flow format
   const { initialNodes, initialEdges } = useMemo(() => {
     const nodes: Node[] = []
     const edges: Edge[] = []
     
     // Find the root node (one without parent_id)
-    const rootNode = mindMapData.find(node => !node.parent_id)
+    const rootNode = currentMindMapData.find(node => !node.parent_id)
     
     // Create a more spread out circular/radial layout for this complex interconnected data
     const centerX = 400
@@ -129,7 +237,7 @@ const MindMap = () => {
     const radiusIncrement = 150
     
     // Create nodes with better positioning
-    mindMapData.forEach((nodeData, index) => {
+    currentMindMapData.forEach((nodeData, index) => {
       let x, y
       
       if (nodeData.id === rootNode?.id) {
@@ -138,7 +246,7 @@ const MindMap = () => {
         y = centerY
       } else {
         // Place other nodes in a circular pattern around the center
-        const angle = (index * 2 * Math.PI) / mindMapData.length
+        const angle = (index * 2 * Math.PI) / currentMindMapData.length
         const radius = radiusIncrement + (index % 3) * 100 // Vary radius for visual interest
         x = centerX + radius * Math.cos(angle)
         y = centerY + radius * Math.sin(angle)
@@ -161,17 +269,17 @@ const MindMap = () => {
     // Create edges from parent-child relationships
     const addedEdges = new Set<string>() // Prevent duplicate edges
     
-    mindMapData.forEach(nodeData => {
+    currentMindMapData.forEach(nodeData => {
       if (nodeData.children && nodeData.children.length > 0) {
         nodeData.children.forEach(childId => {
           // Verify the child node exists in the data
-          const childExists = mindMapData.some(n => n.id === childId)
+          const childExists = currentMindMapData.some(n => n.id === childId)
           const edgeId = `${nodeData.id}-${childId}`
           const reverseEdgeId = `${childId}-${nodeData.id}`
           
           if (childExists && !addedEdges.has(edgeId) && !addedEdges.has(reverseEdgeId)) {
-            const sourceNode = mindMapData.find(n => n.id === nodeData.id)
-            const targetNode = mindMapData.find(n => n.id === childId)
+            const sourceNode = currentMindMapData.find(n => n.id === nodeData.id)
+            const targetNode = currentMindMapData.find(n => n.id === childId)
             
             edges.push({
               id: edgeId,
@@ -197,7 +305,7 @@ const MindMap = () => {
     console.log('Edge details:', edges)
     
     return { initialNodes: nodes, initialEdges: edges }
-  }, [])
+  }, [currentMindMapData])
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges)
@@ -208,30 +316,182 @@ const MindMap = () => {
   )
 
   return (
-    <div className="container max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8 space-y-6">
-      {/* Header */}
-      <header className="space-y-2">
-        <div className="flex items-center gap-2">
-          <Badge color="purple" className="mb-2">
-            <span>Mind Map</span>
-          </Badge>
-        </div>
-        <div>
-          <Heading className="text-2xl sm:text-3xl font-bold">
-            Quantum Chromodynamics Mind Map
-          </Heading>
-          <Text className="text-zinc-500 dark:text-zinc-400 mt-1">
-            Explore QCD concepts and their complex relationships in particle physics
-          </Text>
-          <Text className="text-xs text-zinc-400 dark:text-zinc-500 mt-1 italic">
-            💡 Hover over any node to see detailed explanations
-          </Text>
-        </div>
-      </header>
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 dark:from-zinc-900 dark:to-zinc-800">
+      <div className="container max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
+        
+        {!hasGeneratedMap ? (
+          /* Welcome Screen */
+          <div className="min-h-[80vh] flex items-center justify-center">
+            <div className="text-center max-w-2xl mx-auto space-y-8">
+              <div className="space-y-4">
+                <div className="mx-auto w-20 h-20 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center">
+                  <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                  </svg>
+                </div>
+                <Heading className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+                  AI Study Buddy
+                </Heading>
+                <Text className="text-xl text-zinc-600 dark:text-zinc-300">
+                  Generate interactive mind maps from any topic or document
+                </Text>
+              </div>
 
+              {/* Main Input */}
+              <div className="space-y-4">
+                <div className="flex gap-3 max-w-lg mx-auto">
+                  <Input
+                    value={topicInput}
+                    onChange={(e) => setTopicInput(e.target.value)}
+                    placeholder="Enter any topic (e.g., Machine Learning, Photosynthesis)"
+                    className="flex-1 h-12 text-lg"
+                    onKeyPress={(e) => e.key === 'Enter' && generateMindMapFromTopic()}
+                    disabled={isGenerating}
+                  />
+                  <Button
+                    onClick={generateMindMapFromTopic}
+                    disabled={!topicInput.trim() || isGenerating}
+                    className="h-12 px-6 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700"
+                  >
+                    {isGenerating ? (
+                      <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      'Generate'
+                    )}
+                  </Button>
+                </div>
+                
+                <div className="flex justify-center gap-4">
+                  <Button
+                    onClick={() => setShowUploader(!showUploader)}
+                    className="bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-600 hover:bg-zinc-50 dark:hover:bg-zinc-700"
+                  >
+                    📄 Upload Documents
+                  </Button>
+                  <Button
+                    onClick={generateMindMapFromAllNotes}
+                    disabled={isGenerating}
+                    className="bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-600 hover:bg-zinc-50 dark:hover:bg-zinc-700"
+                  >
+                    🧠 Map All Notes
+                  </Button>
+                  <Button
+                    onClick={() => setShowChatbot(!showChatbot)}
+                    className="bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-600 hover:bg-zinc-50 dark:hover:bg-zinc-700"
+                  >
+                    💬 Ask Questions
+                  </Button>
+                </div>
+              </div>
+
+              {/* Quick Examples */}
+              <div className="space-y-3">
+                <Text className="text-sm text-zinc-500 dark:text-zinc-400">
+                  Try these examples:
+                </Text>
+                <div className="flex flex-wrap justify-center gap-2">
+                  {['Quantum Physics', 'Climate Change', 'Ancient Rome', 'Machine Learning'].map((topic) => (
+                    <button
+                      key={topic}
+                      onClick={() => setTopicInput(topic)}
+                      className="px-3 py-1 text-sm bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-600 rounded-full hover:border-blue-300 dark:hover:border-blue-600 transition-colors"
+                    >
+                      {topic}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          /* Mind Map View */
+          <div className="space-y-6">
+            {/* Header with Controls */}
+            <div className="bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 p-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <Button
+                    onClick={() => {
+                      setHasGeneratedMap(false)
+                      setCurrentMindMapData([])
+                      setTopicInput('')
+                      setCurrentDocumentName('')
+                      setShowChatbot(false)
+                      setShowUploader(false)
+                    }}
+                    className="bg-zinc-100 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-200 dark:hover:bg-zinc-600"
+                  >
+                    ← New Topic
+                  </Button>
+                  <div>
+                    <Heading level={2} className="text-lg font-semibold">
+                      {currentDocumentName ? (
+        <div className="flex items-center gap-2">
+                          <span>📄</span>
+                          <span>{topicInput}</span>
+        </div>
+                      ) : (
+                        topicInput
+                      )}
+          </Heading>
+                    <Text className="text-sm text-zinc-500 dark:text-zinc-400">
+                      {currentDocumentName 
+                        ? `Document analysis • ${currentMindMapData.length} concepts mapped`
+                        : `${currentMindMapData.length} concepts mapped`
+                      }
+          </Text>
+        </div>
+                </div>
+                
+                <div className="flex gap-2">
+                  <Button
+                    onClick={() => setShowUploader(!showUploader)}
+                    className={clsx(
+                      "transition-colors",
+                      showUploader ? "bg-blue-600 hover:bg-blue-700" : "bg-zinc-600 hover:bg-zinc-700"
+                    )}
+                  >
+                    📄 Upload
+                  </Button>
+                  <Button
+                    onClick={() => setShowChatbot(!showChatbot)}
+                    className={clsx(
+                      "transition-colors",
+                      showChatbot ? "bg-green-600 hover:bg-green-700" : "bg-zinc-600 hover:bg-zinc-700"
+                    )}
+                  >
+                    💬 Chat
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* File Uploader */}
+        {showUploader && (
+          <div className="bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 p-6">
+            <FileUploader
+              onUploadComplete={(filename) => {
+                console.log('File uploaded:', filename)
+                generateMindMapFromDocument(filename)
+              }}
+            />
+          </div>
+        )}
+
+        {/* Mind Map and Chat Layout */}
+        {hasGeneratedMap && (
+          <div className={clsx(
+            "grid gap-6",
+            showChatbot ? "grid-cols-1 lg:grid-cols-3" : "grid-cols-1"
+          )}>
       {/* Mind Map Container */}
-      <div className="h-[800px] w-full rounded-lg border border-zinc-950/10 dark:border-white/15 bg-white dark:bg-zinc-900 overflow-hidden">
-        {isMounted ? (
+            <div className={clsx(
+              "h-[700px] rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 overflow-hidden shadow-lg",
+              showChatbot ? "lg:col-span-2" : "col-span-1"
+            )}>
+              {isMounted && currentMindMapData.length > 0 ? (
           <ReactFlow
             nodes={nodes}
             edges={edges}
@@ -240,59 +500,46 @@ const MindMap = () => {
             onConnect={onConnect}
             nodeTypes={nodeTypes}
             fitView
-            className="bg-zinc-50 dark:bg-zinc-950"
+                  className="bg-gradient-to-br from-slate-50 to-blue-50 dark:from-zinc-950 dark:to-zinc-900"
             defaultEdgeOptions={{
               style: { stroke: '#3b82f6', strokeWidth: 2 },
               type: 'smoothstep',
               animated: false
             }}
           >
-            <Controls className="dark:bg-zinc-800 dark:border-white/15" />
+                  <Controls className="bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg shadow-lg" />
             <MiniMap 
-              className="dark:bg-zinc-800 dark:border-white/15"
+                    className="bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg"
               nodeColor="#3498db"
               maskColor="rgb(240, 240, 240, 0.6)"
             />
             <Background 
-              gap={12} 
+                    gap={16} 
               size={1}
-              className="dark:bg-zinc-950"
-              color="#e4e4e7"
+                    color="#e2e8f0"
+                    className="opacity-30"
             />
           </ReactFlow>
         ) : (
-          <div className="h-full w-full flex items-center justify-center bg-zinc-50 dark:bg-zinc-950">
-            <div className="text-center">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-500 mx-auto mb-4"></div>
-              <Text className="text-zinc-500 dark:text-zinc-400">Loading mind map...</Text>
+                <div className="h-full w-full flex items-center justify-center">
+                  <div className="text-center space-y-4">
+                    <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-500 border-t-transparent mx-auto"></div>
+                    <Text className="text-zinc-500 dark:text-zinc-400">
+                      {isGenerating ? 'Generating mind map...' : 'Loading visualization...'}
+                    </Text>
             </div>
           </div>
         )}
       </div>
       
-      {/* Legend */}
-      <div className="bg-white dark:bg-zinc-800 rounded-lg border border-zinc-950/10 dark:border-white/15 p-4">
-        <Subheading className="mb-3">QCD Concepts</Subheading>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded-full bg-purple-500 flex items-center justify-center text-white text-xs">⚛️</div>
-            <Text className="text-sm">Fundamental Theory</Text>
+            {/* Chatbot */}
+            {showChatbot && (
+              <div className="lg:col-span-1">
+                <StudyChatbot className="h-[700px]" />
           </div>
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded-full bg-orange-500 flex items-center justify-center text-white text-xs">🔺</div>
-            <Text className="text-sm">Elementary Particles</Text>
+            )}
           </div>
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded-full bg-red-500 flex items-center justify-center text-white text-xs">🌀</div>
-            <Text className="text-sm">Force Carriers</Text>
-          </div>
-          <div className="flex items-center gap-2">
-            <svg width="20" height="12" className="text-zinc-500 dark:text-zinc-400">
-              <path d="M0 6 L20 6" stroke="currentColor" strokeWidth="2" />
-            </svg>
-            <Text className="text-sm">Relationships</Text>
-          </div>
-        </div>
+        )}
       </div>
     </div>
   )
