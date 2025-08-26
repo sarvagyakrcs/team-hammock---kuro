@@ -38,7 +38,7 @@ async function generateSummaryWithAI(text: string, filename: string): Promise<st
             "Authorization": `Bearer ${process.env.GROQ_API_KEY}`,
           },
           body: JSON.stringify({
-            model: "qwen-qwq-32b",
+            model: "llama-3.3-70b-versatile",
             messages: [
               { role: "system", content: systemPrompt },
               { role: "user", content: userPrompt }

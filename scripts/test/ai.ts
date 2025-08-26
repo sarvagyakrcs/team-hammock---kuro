@@ -8,7 +8,7 @@ export const getCourseModulesUsingAi = async (data : {
     mainOutcome: string,
 }) => {
     const result = await generateObject({
-        model: groq('qwen-qwq-32b'),
+        model: groq('llama-3.3-70b-versatile'),
         schema: courseSchema,
         providerOptions: {
             groq: { reasoningFormat: 'parsed' },

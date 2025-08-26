@@ -14,7 +14,7 @@ const getCourseModulesUsingAi = async (data : {
     try {
         // Using more explicit prompting to get the model to generate content
         const { object } = await generateObject({
-            model: groq('qwen-qwq-32b'),
+            model: groq('llama-3.3-70b-versatile'),
             schema: courseSchema,
             prompt: `
                 Generate a comprehensive list of subtopics for a course titled "${data.name}".
