@@ -124,16 +124,106 @@ const MindMap = () => {
 
   useEffect(() => {
     setIsMounted(true)
+    
+    // Show demo mindmap immediately on load
+    const demoData: MindMapNode[] = [
+      {
+        id: "1",
+        label: "AI Study Assistant",
+        children: ["2", "3", "4"],
+        explanation: "Your intelligent study companion for learning and knowledge mapping",
+        metadata: { color: "#3b82f6", icon: "🤖" },
+      },
+      {
+        id: "2",
+        label: "Mind Mapping",
+        children: ["5", "6"],
+        explanation: "Visual representation of knowledge and concepts",
+        metadata: { color: "#10b981", icon: "🧠" },
+        parent_id: "1",
+      },
+      {
+        id: "3",
+        label: "Document Analysis",
+        children: ["7", "8"],
+        explanation: "AI-powered analysis of your study materials",
+        metadata: { color: "#f59e0b", icon: "📄" },
+        parent_id: "1",
+      },
+      {
+        id: "4",
+        label: "Smart Chat",
+        children: ["9", "10"],
+        explanation: "Interactive Q&A about your study content",
+        metadata: { color: "#8b5cf6", icon: "💬" },
+        parent_id: "1",
+      },
+      {
+        id: "5",
+        label: "Concept Mapping",
+        children: [],
+        explanation: "Visualize relationships between ideas",
+        metadata: { color: "#06b6d4", icon: "🗺️" },
+        parent_id: "2",
+      },
+      {
+        id: "6",
+        label: "Knowledge Trees",
+        children: [],
+        explanation: "Hierarchical organization of information",
+        metadata: { color: "#84cc16", icon: "🌳" },
+        parent_id: "2",
+      },
+      {
+        id: "7",
+        label: "Content Extraction",
+        children: [],
+        explanation: "Extract key information from documents",
+        metadata: { color: "#f97316", icon: "🔍" },
+        parent_id: "3",
+      },
+      {
+        id: "8",
+        label: "Topic Modeling",
+        children: [],
+        explanation: "Identify main themes and topics",
+        metadata: { color: "#ef4444", icon: "🎯" },
+        parent_id: "3",
+      },
+      {
+        id: "9",
+        label: "Contextual Answers",
+        children: [],
+        explanation: "Get answers based on your uploaded content",
+        metadata: { color: "#14b8a6", icon: "🎭" },
+        parent_id: "4",
+      },
+      {
+        id: "10",
+        label: "Study Guidance",
+        children: [],
+        explanation: "Personalized learning recommendations",
+        metadata: { color: "#a855f7", icon: "🧭" },
+        parent_id: "4",
+      },
+    ]
+    
+    setCurrentMindMapData(demoData)
+    setHasGeneratedMap(true)
+    setTopicInput('AI Study Assistant (Demo)')
   }, [])
 
   // Generate mind map from topic
-  const generateMindMapFromTopic = async () => {
-    if (!topicInput.trim() || isGenerating) return
+  const generateMindMapFromTopic = async (customTopic?: string) => {
+    const topic = customTopic || topicInput.trim()
+    if (!topic || isGenerating) return
 
     setIsGenerating(true)
     setCurrentDocumentName('')
+    if (customTopic) setTopicInput(customTopic)
+    
     try {
-      const newMindMapData = await studyBuddyAPI.generateTopicMindMap(topicInput.trim())
+      const newMindMapData = await studyBuddyAPI.generateTopicMindMap(topic)
       setCurrentMindMapData(newMindMapData)
       setHasGeneratedMap(true)
     } catch (error) {
@@ -142,9 +232,9 @@ const MindMap = () => {
       const fallbackData: MindMapNode[] = [
         {
           id: '1',
-          label: topicInput.trim(),
+          label: topic,
           children: [],
-          explanation: `Topic: ${topicInput.trim()}. Mind map generation failed, but you can still chat about this topic.`,
+          explanation: `Topic: ${topic}. Mind map generation failed, but you can still chat about this topic.`,
           metadata: { color: '#3b82f6', icon: '🧠' }
         }
       ]
@@ -228,34 +318,40 @@ const MindMap = () => {
     const nodes: Node[] = []
     const edges: Edge[] = []
     
-    // Find the root node (one without parent_id)
-    const rootNode = currentMindMapData.find(node => !node.parent_id)
+    if (currentMindMapData.length === 0) {
+      console.log('No mind map data available')
+      return { initialNodes: [], initialEdges: [] }
+    }
     
-    // Create a more spread out circular/radial layout for this complex interconnected data
+    // Find the root node (one without parent_id)
+    const rootNode = currentMindMapData.find(node => !node.parent_id) || currentMindMapData[0]
+    console.log('Root node found:', rootNode)
+    
+    // Simplified layout - just place nodes in a simple pattern
     const centerX = 400
     const centerY = 300
-    const radiusIncrement = 150
     
-    // Create nodes with better positioning
+    // Create React Flow nodes with simple positioning
     currentMindMapData.forEach((nodeData, index) => {
-      let x, y
+      let position = { x: centerX, y: centerY }
       
-      if (nodeData.id === rootNode?.id) {
-        // Place root node in center
-        x = centerX
-        y = centerY
+      if (nodeData.id === rootNode.id) {
+        // Root in center
+        position = { x: centerX, y: centerY }
       } else {
-        // Place other nodes in a circular pattern around the center
-        const angle = (index * 2 * Math.PI) / currentMindMapData.length
-        const radius = radiusIncrement + (index % 3) * 100 // Vary radius for visual interest
-        x = centerX + radius * Math.cos(angle)
-        y = centerY + radius * Math.sin(angle)
+        // Arrange other nodes in a circle around the center
+        const angle = (index * 2 * Math.PI) / Math.max(currentMindMapData.length - 1, 1)
+        const radius = 200
+        position = {
+          x: centerX + radius * Math.cos(angle),
+          y: centerY + radius * Math.sin(angle)
+        }
       }
       
       nodes.push({
         id: nodeData.id,
         type: 'custom',
-        position: { x, y },
+        position,
         data: {
           label: nodeData.label,
           metadata: nodeData.metadata,
@@ -267,19 +363,17 @@ const MindMap = () => {
     })
     
     // Create edges from parent-child relationships
-    const addedEdges = new Set<string>() // Prevent duplicate edges
+    const addedEdges = new Set<string>()
     
     currentMindMapData.forEach(nodeData => {
       if (nodeData.children && nodeData.children.length > 0) {
         nodeData.children.forEach(childId => {
-          // Verify the child node exists in the data
           const childExists = currentMindMapData.some(n => n.id === childId)
           const edgeId = `${nodeData.id}-${childId}`
           const reverseEdgeId = `${childId}-${nodeData.id}`
           
           if (childExists && !addedEdges.has(edgeId) && !addedEdges.has(reverseEdgeId)) {
             const sourceNode = currentMindMapData.find(n => n.id === nodeData.id)
-            const targetNode = currentMindMapData.find(n => n.id === childId)
             
             edges.push({
               id: edgeId,
@@ -299,16 +393,28 @@ const MindMap = () => {
       }
     })
     
-    // Debug: log what we're creating
-    console.log('Nodes created:', nodes.length)
-    console.log('Edges created:', edges.length) 
-    console.log('Edge details:', edges)
+    console.log('Mind map layout created:')
+    console.log('- Nodes:', nodes.length)
+    console.log('- Edges:', edges.length)
+    console.log('- Root node:', rootNode.label)
+    console.log('- All nodes:', nodes.map(n => ({ id: n.id, position: n.position })))
     
     return { initialNodes: nodes, initialEdges: edges }
   }, [currentMindMapData])
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges)
+
+  // Update nodes and edges when initialNodes/initialEdges change
+  useEffect(() => {
+    console.log('Updating React Flow with new data:', {
+      nodeCount: initialNodes.length,
+      edgeCount: initialEdges.length,
+      mindMapDataCount: currentMindMapData.length
+    })
+    setNodes(initialNodes)
+    setEdges(initialEdges)
+  }, [initialNodes, initialEdges, setNodes, setEdges])
 
   const onConnect = useCallback(
     (params: Connection) => setEdges((eds) => addEdge(params, eds)),
@@ -349,7 +455,7 @@ const MindMap = () => {
                     disabled={isGenerating}
                   />
                   <Button
-                    onClick={generateMindMapFromTopic}
+                    onClick={() => generateMindMapFromTopic()}
                     disabled={!topicInput.trim() || isGenerating}
                     className="h-12 px-6 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700"
                   >
@@ -381,6 +487,82 @@ const MindMap = () => {
                   >
                     💬 Ask Questions
                   </Button>
+                  <Button
+                    onClick={() => {
+                      // Show demo mindmap immediately using predefined data
+                      const demoData: MindMapNode[] = [
+                        {
+                          id: "1",
+                          label: "React Development",
+                          children: ["2", "3"],
+                          explanation: "A JavaScript library for building user interfaces",
+                          metadata: { color: "#61dafb", icon: "⚛️" },
+                        },
+                        {
+                          id: "2",
+                          label: "Components",
+                          children: ["4", "5"],
+                          explanation: "Independent, reusable UI pieces in React",
+                          metadata: { color: "#ff8c00", icon: "🧱" },
+                          parent_id: "1",
+                        },
+                        {
+                          id: "3",
+                          label: "Hooks",
+                          children: ["6", "7", "8"],
+                          explanation: "Functions that let you use state and other React features",
+                          metadata: { color: "#32cd32", icon: "🪝" },
+                          parent_id: "1",
+                        },
+                        {
+                          id: "4",
+                          label: "Function Component",
+                          children: [],
+                          explanation: "A component defined as a function that returns JSX",
+                          metadata: { color: "#4682b4", icon: "⚡" },
+                          parent_id: "2",
+                        },
+                        {
+                          id: "5",
+                          label: "Class Component",
+                          children: [],
+                          explanation: "A component defined as a class extending React.Component",
+                          metadata: { color: "#8a2be2", icon: "🏛️" },
+                          parent_id: "2",
+                        },
+                        {
+                          id: "6",
+                          label: "useState",
+                          children: [],
+                          explanation: "Hook that lets you add state to function components",
+                          metadata: { color: "#20b2aa", icon: "📊" },
+                          parent_id: "3",
+                        },
+                        {
+                          id: "7",
+                          label: "useEffect",
+                          children: [],
+                          explanation: "Hook for performing side effects in components",
+                          metadata: { color: "#d2691e", icon: "🔄" },
+                          parent_id: "3",
+                        },
+                        {
+                          id: "8",
+                          label: "useContext",
+                          children: [],
+                          explanation: "Hook for consuming values from React Context",
+                          metadata: { color: "#dc143c", icon: "🌐" },
+                          parent_id: "3",
+                        },
+                      ]
+                      setCurrentMindMapData(demoData)
+                      setHasGeneratedMap(true)
+                      setTopicInput('React Development (Demo)')
+                    }}
+                    className="bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white"
+                  >
+                    🚀 Try Demo
+                  </Button>
                 </div>
               </div>
 
@@ -393,8 +575,9 @@ const MindMap = () => {
                   {['Quantum Physics', 'Climate Change', 'Ancient Rome', 'Machine Learning'].map((topic) => (
                     <button
                       key={topic}
-                      onClick={() => setTopicInput(topic)}
+                      onClick={() => generateMindMapFromTopic(topic)}
                       className="px-3 py-1 text-sm bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-600 rounded-full hover:border-blue-300 dark:hover:border-blue-600 transition-colors"
+                      disabled={isGenerating}
                     >
                       {topic}
                     </button>
@@ -406,6 +589,16 @@ const MindMap = () => {
         ) : (
           /* Mind Map View */
           <div className="space-y-6">
+            {/* Debug Info */}
+            <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
+              <Text className="text-sm text-yellow-800 dark:text-yellow-200">
+                Debug: isMounted={isMounted ? 'true' : 'false'}, 
+                mindMapData={currentMindMapData.length}, 
+                nodes={nodes.length}, 
+                edges={edges.length}
+              </Text>
+            </div>
+            
             {/* Header with Controls */}
             <div className="bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 p-4">
               <div className="flex items-center justify-between">
@@ -462,6 +655,35 @@ const MindMap = () => {
                   >
                     💬 Chat
                   </Button>
+                  <Button
+                    onClick={() => {
+                      // Force a simple test mindmap
+                      const testData: MindMapNode[] = [
+                        {
+                          id: "test1",
+                          label: "Test Node",
+                          children: ["test2"],
+                          explanation: "This is a test node",
+                          metadata: { color: "#ff0000", icon: "🧪" },
+                        },
+                        {
+                          id: "test2",
+                          label: "Child Node",
+                          children: [],
+                          explanation: "This is a child node",
+                          metadata: { color: "#00ff00", icon: "🔗" },
+                          parent_id: "test1"
+                        }
+                      ]
+                      console.log('Setting test data:', testData)
+                      setCurrentMindMapData(testData)
+                      setTopicInput('Test (Manual)')
+                      setHasGeneratedMap(true)
+                    }}
+                    className="bg-red-600 hover:bg-red-700"
+                  >
+                    🧪 Test
+                  </Button>
                 </div>
               </div>
             </div>
@@ -491,7 +713,16 @@ const MindMap = () => {
               "h-[700px] rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 overflow-hidden shadow-lg",
               showChatbot ? "lg:col-span-2" : "col-span-1"
             )}>
-              {isMounted && currentMindMapData.length > 0 ? (
+              {(() => {
+                console.log('Render check:', {
+                  isMounted,
+                  mindMapDataLength: currentMindMapData.length,
+                  nodesLength: nodes.length,
+                  edgesLength: edges.length,
+                  hasGeneratedMap
+                })
+                return isMounted && currentMindMapData.length > 0
+              })() ? (
           <ReactFlow
             nodes={nodes}
             edges={edges}

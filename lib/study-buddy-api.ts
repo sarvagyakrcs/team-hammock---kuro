@@ -95,6 +95,8 @@ class StudyBuddyAPI {
   // Generate mind map
   async generateMindMap(query: string): Promise<MindMapNode[]> {
     try {
+      console.log('Sending mind map generation request:', { query })
+      
       const response = await fetch(`${this.baseURL}/generate-mindmap/`, {
         method: 'POST',
         headers: {
@@ -104,29 +106,66 @@ class StudyBuddyAPI {
         body: JSON.stringify({ query })
       })
 
+      console.log('Response status:', response.status, response.statusText)
+
       if (!response.ok) {
+        const errorText = await response.text()
+        console.error('API error response:', errorText)
         throw new Error(`Mind map generation failed: ${response.statusText}`)
       }
 
-      const data = await response.json()
+      const responseText = await response.text()
+      console.log('Raw API response text:', responseText)
+      
+      let data
+      try {
+        data = JSON.parse(responseText)
+      } catch (parseError) {
+        console.error('JSON parse error:', parseError)
+        console.error('Response text that failed to parse:', responseText)
+        
+        // Try to extract JSON from response if it's wrapped in other text
+        const jsonMatch = responseText.match(/\[.*\]/s)
+        if (jsonMatch) {
+          console.log('Attempting to parse extracted JSON:', jsonMatch[0])
+          try {
+            data = JSON.parse(jsonMatch[0])
+          } catch (extractError) {
+            console.error('Failed to parse extracted JSON:', extractError)
+            throw new Error(`Invalid JSON response: ${responseText.substring(0, 200)}...`)
+          }
+        } else {
+          throw new Error(`No valid JSON found in response: ${responseText.substring(0, 200)}...`)
+        }
+      }
+      
+      console.log('Parsed JSON data:', data)
       
       // Validate the response format
       if (!Array.isArray(data)) {
+        console.error('Invalid response format, expected array:', data)
         throw new Error('Invalid mind map response format')
       }
 
       // Ensure each node has required properties
-      return data.map((node: any, index: number) => ({
-        id: node.id || `node_${index}`,
-        label: node.label || `Node ${index + 1}`,
-        children: Array.isArray(node.children) ? node.children : [],
-        explanation: node.explanation || '',
-        metadata: {
-          color: node.metadata?.color || this.getRandomColor(),
-          icon: node.metadata?.icon || this.getRandomIcon()
-        },
-        parent_id: node.parent_id || undefined
-      }))
+      const processedNodes = data.map((node: any, index: number) => {
+        const processedNode = {
+          id: node.id || `node_${index}`,
+          label: node.label || `Node ${index + 1}`,
+          children: Array.isArray(node.children) ? node.children : [],
+          explanation: node.explanation || '',
+          metadata: {
+            color: node.metadata?.color || this.getRandomColor(),
+            icon: node.metadata?.icon || this.getRandomIcon()
+          },
+          parent_id: node.parent_id || undefined
+        }
+        console.log(`Processed node ${index}:`, processedNode)
+        return processedNode
+      })
+
+      console.log('Final processed nodes:', processedNodes)
+      return processedNodes
     } catch (error) {
       console.error('Mind map generation error:', error)
       throw error
@@ -170,6 +209,13 @@ class StudyBuddyAPI {
       console.log('API response received, nodes:', response.length)
       
       if (response && response.length > 0) {
+        // Validate that we have a proper tree structure
+        const hasRootNode = response.some(node => !node.parent_id)
+        if (!hasRootNode) {
+          console.warn('No root node found, fixing structure')
+          // Make the first node the root if no root exists
+          response[0].parent_id = undefined
+        }
         return response
       } else {
         throw new Error('Empty response from API')
@@ -213,7 +259,7 @@ class StudyBuddyAPI {
       
       const response = await this.generateMindMap(allNotesQuery)
       console.log('All notes mind map response received, nodes:', response.length)
-      
+      console.log(response)
       if (response && response.length > 0) {
         return response
       } else {
